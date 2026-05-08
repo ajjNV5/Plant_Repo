@@ -191,7 +191,7 @@ function renderMap(location, species, trails) {
     const icon = L.divIcon({ className: '', html: '<div class="plant-marker">🌿</div>', iconSize: [44, 56] });
     L.marker([plant.lat, plant.lon], { icon })
       .bindPopup(
-        `<b>${plant.name}</b><br>${plant.scientificName || 'Species unknown'}<br>${seedPhaseText(plant.month)}<br>Likely source: ${plant.basis}`,
+        `<b>${plant.name}</b><br>${plant.scientificName || 'Species unknown'}<br>${getSeedingPhaseDescription(plant.month)}<br>Likely source: ${plant.basis}`,
       )
       .addTo(layerGroup);
   });
@@ -226,7 +226,7 @@ function renderSpeciesList(species) {
     });
 
     name.textContent = plant.name;
-    details.textContent = ` (${seedPhaseText(plant.month)})`;
+    details.textContent = ` (${getSeedingPhaseDescription(plant.month)})`;
     plantsList.appendChild(fragment);
   });
 }
@@ -259,7 +259,7 @@ function refreshProgress() {
 
   collectedSpecies.forEach((plant) => {
     const li = document.createElement('li');
-    li.textContent = `${plant.name} • ${seedPhaseText(plant.month)}`;
+    li.textContent = `${plant.name} • ${getSeedingPhaseDescription(plant.month)}`;
     collectedList.appendChild(li);
   });
 }
@@ -275,12 +275,12 @@ function renderVaultCards() {
     return;
   }
 
+  const year = new Date().getFullYear();
   collectedSpecies.forEach((plant) => {
     const card = document.createElement('article');
     card.className = 'card';
     const matchedRule = speciesStorageRules.find((rule) => rule.pattern.test(plant.name));
 
-    const year = new Date().getFullYear();
     const title = document.createElement('h4');
     title.textContent = plant.name;
     card.appendChild(title);
@@ -307,7 +307,7 @@ function renderVaultCards() {
   });
 }
 
-function seedPhaseText(month) {
+function getSeedingPhaseDescription(month) {
   if (!month) return 'Season unknown';
   return GENERAL_SEEDING_MONTHS.includes(month) ? 'Likely seeding phase' : 'Not peak seeding phase';
 }
