@@ -10,6 +10,17 @@ const completionText = document.getElementById('completion-text');
 const vaultCards = document.getElementById('vault-cards');
 
 const maxRadiusKm = 80.4672; // 50 miles
+const KM_PER_LAT_DEGREE = 111;
+const GBIF_FETCH_LIMIT = 120;
+const MAX_SPECIES_DISPLAY = 25;
+const DEFAULT_VIABILITY_YEARS = 2;
+const GENERAL_SEEDING_MONTHS = [8, 9, 10, 11];
+const speciesStorageRules = [
+  {
+    pattern: /milkweed/i,
+    html: '<p><b>Stratification:</b> Refrigerate ~30 days before spring sowing.</p>',
+  },
+];
 const appState = {
   species: [],
   collectedIds: new Set(JSON.parse(localStorage.getItem('collectedSpecies') || '[]')),
@@ -99,11 +110,11 @@ async function geocodeAddress(address) {
 }
 
 async function loadSpecies(lat, lon) {
-  const latDelta = maxRadiusKm / 111;
-  const lonDelta = maxRadiusKm / (111 * Math.cos((lat * Math.PI) / 180));
+  const latDelta = maxRadiusKm / KM_PER_LAT_DEGREE;
+  const lonDelta = maxRadiusKm / (KM_PER_LAT_DEGREE * Math.cos((lat * Math.PI) / 180));
 
   const url = new URL('https://api.gbif.org/v1/occurrence/search');
-  url.searchParams.set('limit', '120');
+  url.searchParams.set('limit', String(GBIF_FETCH_LIMIT));
   url.searchParams.set('offset', '0');
   url.searchParams.set('kingdomKey', '6');
   url.searchParams.set('hasCoordinate', 'true');
@@ -126,7 +137,7 @@ async function loadSpecies(lat, lon) {
     }))
     .filter((item) => haversine(lat, lon, item.lat, item.lon) <= maxRadiusKm);
 
-  const deduped = [...new Map(rows.map((item) => [item.id, item])).values()].slice(0, 25);
+  const deduped = [...new Map(rows.map((item) => [item.id, item])).values()].slice(0, MAX_SPECIES_DISPLAY);
   return deduped;
 }
 
@@ -261,17 +272,15 @@ function renderVaultCards() {
   collectedSpecies.forEach((plant) => {
     const card = document.createElement('article');
     card.className = 'card';
-    const milkweedRule = /milkweed/i.test(plant.name)
-      ? '<p><b>Stratification:</b> Refrigerate ~30 days before spring sowing.</p>'
-      : '';
+    const matchedRule = speciesStorageRules.find((rule) => rule.pattern.test(plant.name));
 
     const year = new Date().getFullYear();
     card.innerHTML = `
       <h4>${plant.name}</h4>
       <p><b>Storage:</b> Cool, dry, dark container. Label as ${year} harvest.</p>
       <p><b>Planting:</b> Sow at 2–3× seed depth in native soil mix with full sun adaptation.</p>
-      <p><b>Expiry Alert:</b> Review by ${year + 2}; viability may decline after 2 years.</p>
-      ${milkweedRule}
+      <p><b>Expiry Alert:</b> Review by ${year + DEFAULT_VIABILITY_YEARS}; viability may decline after ${DEFAULT_VIABILITY_YEARS} years.</p>
+      ${matchedRule?.html || ''}
     `;
     vaultCards.appendChild(card);
   });
@@ -279,8 +288,7 @@ function renderVaultCards() {
 
 function seedPhaseText(month) {
   if (!month) return 'Season unknown';
-  const likelySeedMonths = [8, 9, 10, 11];
-  return likelySeedMonths.includes(month) ? 'Likely seeding phase' : 'Not peak seeding phase';
+  return GENERAL_SEEDING_MONTHS.includes(month) ? 'Likely seeding phase' : 'Not peak seeding phase';
 }
 
 function haversine(lat1, lon1, lat2, lon2) {

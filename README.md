@@ -19,7 +19,7 @@ Bio-Steward Seed Archive web app prototype with three mobile-friendly pages:
 ## Run locally
 
 ```bash
-cd /home/runner/work/Plant_Repo/Plant_Repo
+cd <repository-directory>
 python3 -m http.server 8000
 ```
 
