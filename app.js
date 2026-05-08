@@ -18,7 +18,8 @@ const GENERAL_SEEDING_MONTHS = [8, 9, 10, 11];
 const speciesStorageRules = [
   {
     pattern: /milkweed/i,
-    html: '<p><b>Stratification:</b> Refrigerate ~30 days before spring sowing.</p>',
+    title: 'Stratification',
+    message: 'Refrigerate ~30 days before spring sowing.',
   },
 ];
 const appState = {
@@ -190,7 +191,7 @@ function renderMap(location, species, trails) {
     const icon = L.divIcon({ className: '', html: '<div class="plant-marker">🌿</div>', iconSize: [44, 56] });
     L.marker([plant.lat, plant.lon], { icon })
       .bindPopup(
-        `<b>${plant.name}</b><br>${plant.scientificName || 'species unknown'}<br>${seedPhaseText(plant.month)}<br>Likely source: ${plant.basis}`,
+        `<b>${plant.name}</b><br>${plant.scientificName || 'Species unknown'}<br>${seedPhaseText(plant.month)}<br>Likely source: ${plant.basis}`,
       )
       .addTo(layerGroup);
   });
@@ -250,7 +251,9 @@ function refreshProgress() {
 
   collectedList.innerHTML = '';
   if (!collectedSpecies.length) {
-    collectedList.innerHTML = '<li>No verified seed collections yet.</li>';
+    const li = document.createElement('li');
+    li.textContent = 'No verified seed collections yet.';
+    collectedList.appendChild(li);
     return;
   }
 
@@ -263,9 +266,12 @@ function refreshProgress() {
 
 function renderVaultCards() {
   const collectedSpecies = appState.species.filter((plant) => appState.collectedIds.has(plant.id));
-  vaultCards.innerHTML = '';
+  vaultCards.replaceChildren();
   if (!collectedSpecies.length) {
-    vaultCards.innerHTML = '<p class="small">Collect and verify seeds on the Bio-Map to generate personalized storage cards.</p>';
+    const emptyMessage = document.createElement('p');
+    emptyMessage.className = 'small';
+    emptyMessage.textContent = 'Collect and verify seeds on the Bio-Map to generate personalized storage cards.';
+    vaultCards.appendChild(emptyMessage);
     return;
   }
 
@@ -275,13 +281,28 @@ function renderVaultCards() {
     const matchedRule = speciesStorageRules.find((rule) => rule.pattern.test(plant.name));
 
     const year = new Date().getFullYear();
-    card.innerHTML = `
-      <h4>${plant.name}</h4>
-      <p><b>Storage:</b> Cool, dry, dark container. Label as ${year} harvest.</p>
-      <p><b>Planting:</b> Sow at 2–3× seed depth in native soil mix with full sun adaptation.</p>
-      <p><b>Expiry Alert:</b> Review by ${year + DEFAULT_VIABILITY_YEARS}; viability may decline after ${DEFAULT_VIABILITY_YEARS} years.</p>
-      ${matchedRule?.html || ''}
-    `;
+    const title = document.createElement('h4');
+    title.textContent = plant.name;
+    card.appendChild(title);
+
+    const storage = document.createElement('p');
+    storage.innerHTML = `<b>Storage:</b> Cool, dry, dark container. Label as ${year} harvest.`;
+    card.appendChild(storage);
+
+    const planting = document.createElement('p');
+    planting.innerHTML = '<b>Planting:</b> Sow at 2–3× seed depth in native soil mix with full sun adaptation.';
+    card.appendChild(planting);
+
+    const expiry = document.createElement('p');
+    expiry.innerHTML = `<b>Expiry Alert:</b> Review by ${year + DEFAULT_VIABILITY_YEARS}; viability may decline after ${DEFAULT_VIABILITY_YEARS} years.`;
+    card.appendChild(expiry);
+
+    if (matchedRule) {
+      const specialRule = document.createElement('p');
+      specialRule.innerHTML = `<b>${matchedRule.title}:</b> ${matchedRule.message}`;
+      card.appendChild(specialRule);
+    }
+
     vaultCards.appendChild(card);
   });
 }
