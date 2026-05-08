@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Bio-Steward Seed Archive</title>
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+      crossorigin=""
+    />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header>
+      <h1>🌱 Bio-Steward Seed Archive</h1>
+      <p>Find native plants, collect seeds ethically, and protect biodiversity.</p>
+    </header>
+
+    <nav class="tabs" aria-label="Main pages">
+      <button class="tab active" data-tab="hunt">Bio-Map</button>
+      <button class="tab" data-tab="progress">Seed-Dex</button>
+      <button class="tab" data-tab="vault">Vault Manual</button>
+    </nav>
+
+    <main>
+      <section id="hunt" class="page active">
+        <div class="panel">
+          <h2>🗺️ The Hunt</h2>
+          <form id="location-form">
+            <label for="address">Enter a continental U.S. address</label>
+            <div class="row">
+              <input id="address" type="text" placeholder="123 Main St, Denver, CO" required />
+              <button type="submit">Load 50-mile Bio-Map</button>
+            </div>
+          </form>
+          <p class="small" id="status">Enter an address to begin.</p>
+        </div>
+
+        <div id="map" aria-label="Map of native plants and trails"></div>
+
+        <div class="grid two">
+          <div class="panel">
+            <h3>Likely Native Seed Sources</h3>
+            <ul id="plants-list"></ul>
+          </div>
+          <div class="panel">
+            <h3>Nearby Hikes & Nature Spots</h3>
+            <ul id="trails-list"></ul>
+          </div>
+        </div>
+      </section>
+
+      <section id="progress" class="page">
+        <div class="panel">
+          <h2>📊 Seed-Dex</h2>
+          <p>Track collected seeds versus all species discovered in your 50-mile biome.</p>
+          <div class="progress-wrap" role="img" aria-label="Collection completion bar">
+            <div id="completion-bar"></div>
+          </div>
+          <p id="completion-text">0 / 0 collected (0%)</p>
+          <ul id="collected-list"></ul>
+        </div>
+      </section>
+
+      <section id="vault" class="page">
+        <div class="panel">
+          <h2>🧊 Vault Manual</h2>
+          <p>Use the Rule of 100 and species cards to preserve seed viability.</p>
+          <div class="grid three">
+            <label>
+              Storage temperature (°F)
+              <input id="temp" type="number" value="45" />
+            </label>
+            <label>
+              Relative humidity (%)
+              <input id="humidity" type="number" value="40" />
+            </label>
+            <button id="rule-check" type="button">Check Rule of 100</button>
+          </div>
+          <p id="rule-result"></p>
+          <div id="vault-cards" class="cards"></div>
+        </div>
+      </section>
+    </main>
+
+    <template id="plant-item-template">
+      <li>
+        <label>
+          <input type="checkbox" />
+          <span class="name"></span>
+          <span class="small details"></span>
+        </label>
+      </li>
+    </template>
+
+    <script
+      src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+      integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+      crossorigin=""
+    ></script>
+    <script src="/app.js" type="module"></script>
+  </body>
+</html>
