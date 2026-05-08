@@ -4,6 +4,12 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Bio-Steward Seed Archive</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Lora:wght@400;500;600&family=Montserrat:wght@500;600;700&display=swap"
+      rel="stylesheet"
+    />
     <link
       rel="stylesheet"
       href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
@@ -86,11 +92,18 @@
     </main>
 
     <template id="plant-item-template">
-      <li>
-        <label>
+      <li class="plant-item">
+        <label class="plant-choice">
           <input type="checkbox" />
-          <span class="name"></span>
-          <span class="small details"></span>
+          <span class="plant-thumb-wrap">
+            <img class="plant-thumb" loading="lazy" referrerpolicy="no-referrer" />
+            <span class="plant-thumb-fallback">No photo</span>
+          </span>
+          <span class="plant-meta">
+            <span class="common-name"></span>
+            <span class="small scientific-name"></span>
+            <span class="small details"></span>
+          </span>
         </label>
       </li>
     </template>
