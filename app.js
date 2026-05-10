@@ -8,6 +8,8 @@ const collectedList = document.getElementById('collected-list');
 const completionBar = document.getElementById('completion-bar');
 const completionText = document.getElementById('completion-text');
 const vaultCards = document.getElementById('vault-cards');
+const vaultUserInput = document.getElementById('vault-user');
+const vaultUserInfo = document.getElementById('vault-user-info');
 const vaultSection = document.getElementById('vault');
 const tempInput = document.getElementById('temp');
 const humidityInput = document.getElementById('humidity');
@@ -33,10 +35,21 @@ const speciesStorageRules = [
     message: 'Refrigerate ~30 days before spring sowing.',
   },
 ];
+const legacyVaultBatches = JSON.parse(localStorage.getItem('seedVaultBatches') || '[]');
+const parsedVaultByUser = JSON.parse(localStorage.getItem('seedVaultBatchesByUser') || '{}');
+const initialVaultByUser =
+  parsedVaultByUser && typeof parsedVaultByUser === 'object' && !Array.isArray(parsedVaultByUser)
+    ? parsedVaultByUser
+    : {};
+if (!Object.keys(initialVaultByUser).length && Array.isArray(legacyVaultBatches) && legacyVaultBatches.length) {
+  initialVaultByUser['Default Steward'] = legacyVaultBatches;
+}
+const storedVaultUser = localStorage.getItem('currentVaultUser') || 'Default Steward';
 const appState = {
   species: [],
   collectedIds: new Set(JSON.parse(localStorage.getItem('collectedSpecies') || '[]')),
-  vaultBatches: JSON.parse(localStorage.getItem('seedVaultBatches') || '[]'),
+  vaultByUser: initialVaultByUser,
+  currentVaultUser: storedVaultUser,
 };
 
 const map = L.map(mapElement, { zoomControl: false }).setView([39.5, -98.35], 4);
@@ -55,6 +68,19 @@ tabs.forEach((tab) => {
     map.invalidateSize();
   });
 });
+
+if (vaultUserInput) {
+  vaultUserInput.addEventListener('change', () => {
+    setCurrentVaultUser(vaultUserInput.value);
+  });
+  vaultUserInput.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      setCurrentVaultUser(vaultUserInput.value);
+      vaultUserInput.blur();
+    }
+  });
+}
 
 document.getElementById('location-form').addEventListener('submit', async (event) => {
   event.preventDefault();
@@ -208,6 +234,22 @@ async function fetchGbifOccurrences(params) {
 }
 
 async function loadTrails(lat, lon) {
+  const radiusDeg = maxRadiusKm / KM_PER_LAT_DEGREE;
+  const lonScale = Math.cos((lat * Math.PI) / 180);
+  const bbox = {
+    minLat: lat - radiusDeg,
+    maxLat: lat + radiusDeg,
+    minLon: lon - radiusDeg / lonScale,
+    maxLon: lon + radiusDeg / lonScale,
+  };
+  const [usgsTrails, overpassTrails] = await Promise.all([
+    fetchUsgsTrails(bbox),
+    fetchOverpassTrails(lat, lon),
+  ]);
+  return mergeTrailSources(usgsTrails, overpassTrails).slice(0, 40);
+}
+
+async function fetchOverpassTrails(lat, lon) {
   const query = `
     [out:json][timeout:20];
     (
@@ -222,15 +264,17 @@ async function loadTrails(lat, lon) {
     method: 'POST',
     body: query,
   });
+  if (!response.ok) throw new Error(`Overpass request failed: ${response.status}`);
   const data = await response.json();
 
   return (data.elements || [])
     .map((element) => ({
-      id: String(element.id),
+      id: `osm-${String(element.id)}`,
       name: element.tags?.name || element.tags?.leisure || element.tags?.route || 'Trail / natural area',
       typeHint: inferTrailTypeHint(element.tags || {}),
       lat: element.center?.lat || element.lat,
       lon: element.center?.lon || element.lon,
+      lengthMiles: null,
     }))
     .filter((item) => item.lat && item.lon)
     .slice(0, 20);
@@ -241,6 +285,78 @@ function inferTrailTypeHint(tags) {
   if (tags.route === 'hiking') return 'trail';
   if (tags.highway === 'path' || tags.highway === 'footway' || tags.highway === 'track') return 'trail';
   return 'general';
+}
+
+function mergeTrailSources(usgsTrails, overpassTrails) {
+  const merged = [];
+  const seen = new Set();
+  [...usgsTrails, ...overpassTrails].forEach((trail) => {
+    const roundedLat = Number(trail.lat).toFixed(4);
+    const roundedLon = Number(trail.lon).toFixed(4);
+    const nameKey = (trail.name || '').trim().toLowerCase();
+    const key = `${nameKey}|${roundedLat}|${roundedLon}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    merged.push(trail);
+  });
+  return merged;
+}
+
+async function fetchUsgsTrails(bbox) {
+  // USGS National Map transportation layer 37 = Trails (hiker/pedestrian)
+  const USGS_REST_BASE = 'https://carto.nationalmap.gov/arcgis/rest/services/transportation/MapServer/37/query';
+  const params = new URLSearchParams({
+    f: 'geojson',
+    geometryType: 'esriGeometryEnvelope',
+    geometry: `${bbox.minLon},${bbox.minLat},${bbox.maxLon},${bbox.maxLat}`,
+    inSR: '4326',
+    outSR: '4326',
+    spatialRel: 'esriSpatialRelIntersects',
+    where: "hikerpedestrian='Y'",
+    outFields: 'objectid,name,lengthmiles',
+    returnGeometry: 'true',
+    resultRecordCount: '50',
+  });
+
+  const response = await fetch(`${USGS_REST_BASE}?${params}`);
+  if (!response.ok) throw new Error(`USGS trails request failed: ${response.status}`);
+  const data = await response.json();
+
+  return (data.features || [])
+    .map((feature) => {
+      const props = feature.properties || {};
+      const coords = extractRepresentativeCoord(feature.geometry);
+      if (!coords) return null;
+      return {
+        id: String(props.objectid ?? Math.random()),
+        name: props.name || 'Unnamed Trail',
+        typeHint: 'trail',
+        lat: coords.lat,
+        lon: coords.lon,
+        lengthMiles: props.lengthmiles != null ? Number(props.lengthmiles).toFixed(1) : null,
+      };
+    })
+    .filter(Boolean)
+    .slice(0, 20);
+}
+
+function extractRepresentativeCoord(geometry) {
+  if (!geometry) return null;
+  if (geometry.type === 'Point') {
+    const [lon, lat] = geometry.coordinates;
+    return { lat, lon };
+  }
+  let ring;
+  if (geometry.type === 'LineString') {
+    ring = geometry.coordinates;
+  } else if (geometry.type === 'MultiLineString') {
+    ring = geometry.coordinates[0];
+  } else {
+    return null;
+  }
+  if (!ring || !ring.length) return null;
+  const mid = ring[Math.floor(ring.length / 2)];
+  return { lat: mid[1], lon: mid[0] };
 }
 
 function renderMap(location, species, trails) {
@@ -260,24 +376,12 @@ function renderMap(location, species, trails) {
     .bindPopup(`📍 Base location<br>${location.display}`)
     .addTo(layerGroup);
 
-  species.forEach((plant) => {
-    const markerHtml = plant.imageUrl
-      ? `<div class="plant-map-marker"><span class="plant-map-thumb-wrap"><img class="plant-map-thumb" src="${escapeHtmlAttribute(plant.imageUrl)}" alt="${escapeHtmlAttribute(plant.commonName || plant.name)} photo" referrerpolicy="no-referrer" /></span></div>`
-      : '<div class="plant-map-marker no-image"><span class="plant-map-thumb-wrap"><span class="plant-map-thumb-fallback">No photo</span></span></div>';
-    const icon = L.divIcon({ className: '', html: markerHtml, iconSize: [64, 76], iconAnchor: [32, 69], popupAnchor: [0, -56] });
-    L.marker([plant.lat, plant.lon], { icon })
-      .bindPopup(
-        `<b>${plant.name}</b><br>${plant.scientificName || 'Species unknown'}<br>${seedPhaseText(plant.month)}<br>Likely source: ${plant.basis}`,
-      )
-      .addTo(layerGroup);
-  });
-
   trails.forEach((trail) => {
     const trailSummary = buildTrailPlantsSummary(trail, 3);
     const icon = createTrailMapIcon(trail);
     L.marker([trail.lat, trail.lon], { icon })
       .bindPopup(
-        `<b>🥾 ${trail.name}</b><br>${trailSummary.countText}<br>${trailSummary.scopeText}<br><br>${trailSummary.itemsText}`,
+        `<b>🥾 ${trail.name}</b>${trail.lengthMiles ? `<br>${trail.lengthMiles} mi` : ''}<br>${trailSummary.countText}<br>${trailSummary.scopeText}<br><br>${trailSummary.itemsText}`,
       )
       .addTo(layerGroup);
   });
@@ -383,7 +487,8 @@ function renderTrailsList(trails) {
 
     const summary = document.createElement('p');
     summary.className = 'small';
-    summary.textContent = `${trail.matchedPlants.length} likely plants • ${trail.seedingNowCount} seeding now • ${trail.scopeLabel}`;
+    const lengthStr = trail.lengthMiles ? ` • ${trail.lengthMiles} mi` : '';
+    summary.textContent = `${trail.matchedPlants.length} likely plants • ${trail.seedingNowCount} seeding now • ${trail.scopeLabel}${lengthStr}`;
     li.appendChild(summary);
 
     if (!trail.matchedPlants.length) {
@@ -555,13 +660,15 @@ function refreshProgress() {
 function renderVaultCards() {
   const speciesById = new Map(appState.species.map((plant) => [plant.id, plant]));
   const grouped = groupVaultBatchesBySpecies(speciesById);
+  const batchCount = getCurrentVaultBatches().length;
   const storageHealth = computeStorageHealth(Number(tempInput.value), Number(humidityInput.value));
+  updateVaultUserInfo(batchCount);
 
   vaultCards.replaceChildren();
   if (!grouped.length) {
     const emptyMessage = document.createElement('p');
     emptyMessage.className = 'small';
-    emptyMessage.textContent = 'Collect and verify seeds on the Bio-Map to generate personalized storage cards.';
+    emptyMessage.textContent = `${appState.currentVaultUser} has no saved vault batches yet. Collect and verify seeds on the Bio-Map to generate personalized storage cards.`;
     vaultCards.appendChild(emptyMessage);
     return;
   }
@@ -668,7 +775,7 @@ function renderVaultCards() {
 
 function groupVaultBatchesBySpecies(speciesById) {
   const groups = new Map();
-  appState.vaultBatches.forEach((batch) => {
+  getCurrentVaultBatches().forEach((batch) => {
     const plant = speciesById.get(batch.speciesId) || {
       id: batch.speciesId,
       name: batch.speciesName || 'Unknown plant',
@@ -690,16 +797,54 @@ function groupVaultBatchesBySpecies(speciesById) {
 }
 
 function addVaultBatch(plant, year) {
-  const exists = appState.vaultBatches.some((batch) => batch.speciesId === plant.id && batch.year === year);
+  const userBatches = getCurrentVaultBatches();
+  const exists = userBatches.some((batch) => batch.speciesId === plant.id && batch.year === year);
   if (exists) return;
 
-  appState.vaultBatches.push({
+  userBatches.push({
     speciesId: plant.id,
     speciesName: plant.commonName || plant.name,
     scientificName: plant.scientificName || '',
     year,
   });
-  localStorage.setItem('seedVaultBatches', JSON.stringify(appState.vaultBatches));
+  persistVaultState();
+}
+
+function normalizeVaultUserName(name) {
+  const normalized = String(name || '')
+    .trim()
+    .replace(/\s+/g, ' ');
+  return normalized || 'Default Steward';
+}
+
+function getCurrentVaultBatches() {
+  const user = normalizeVaultUserName(appState.currentVaultUser);
+  if (!Array.isArray(appState.vaultByUser[user])) {
+    appState.vaultByUser[user] = [];
+  }
+  return appState.vaultByUser[user];
+}
+
+function persistVaultState() {
+  localStorage.setItem('seedVaultBatchesByUser', JSON.stringify(appState.vaultByUser));
+  localStorage.setItem('currentVaultUser', appState.currentVaultUser);
+}
+
+function updateVaultUserInfo(batchCount) {
+  if (!vaultUserInfo) return;
+  const countText = `${batchCount} batch${batchCount === 1 ? '' : 'es'}`;
+  vaultUserInfo.textContent = `Viewing vault for ${appState.currentVaultUser} (${countText}).`;
+}
+
+function setCurrentVaultUser(name) {
+  const normalized = normalizeVaultUserName(name);
+  appState.currentVaultUser = normalized;
+  getCurrentVaultBatches();
+  persistVaultState();
+  if (vaultUserInput && vaultUserInput.value !== normalized) {
+    vaultUserInput.value = normalized;
+  }
+  renderVaultCards();
 }
 
 function computeBatchViability(batchYear, storageHealth, currentYear = new Date().getFullYear()) {
@@ -766,4 +911,4 @@ function haversine(lat1, lon1, lat2, lon2) {
 
 refreshProgress();
 applyVaultAtmosphere(computeStorageHealth(Number(tempInput.value), Number(humidityInput.value)));
-renderVaultCards();
+setCurrentVaultUser(appState.currentVaultUser);
